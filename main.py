@@ -1,18 +1,36 @@
-import asyncio
 import logging
-import signal
-from bot import dp, bot
-import handlers  # noqa: F401 - загружаем обработчики
+import asyncio
+import os
+from fastapi import FastAPI, Request
+from aiogram import Bot, Dispatcher
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from bot import bot, dp
 
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    
-    # Обрабатываем сигналы завершения (чтобы бот корректно закрывался)
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(dp.stop_polling()))
+# Получаем URL сервера
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-    await dp.start_polling(bot)  # Правильный запуск в aiogram 3
+# Настраиваем FastAPI
+app = FastAPI()
 
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.delete_webhook()
+
+# Обработчик запросов Telegram
+async def telegram_webhook(request: Request):
+    update = await request.json()
+    await dp.feed_webhook_update(bot, update)
+    return {"status": "ok"}
+
+# Подключаем обработчик
+app.post("/webhook")(telegram_webhook)
+
+# Запуск бота
 if __name__ == "__main__":
-    asyncio.run(main())
+    logging.basicConfig(level=logging.INFO)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
