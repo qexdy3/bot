@@ -1,6 +1,11 @@
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage  # Простое хранилище состояний
+
 from config import BOT_TOKEN
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())  # Добавляем хранилище
+dp = Dispatcher()
+
+async def on_startup():
+    await bot.set_webhook(os.getenv("WEBHOOK_URL"))
+
+dp.startup.register(on_startup)
