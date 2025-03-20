@@ -1,5 +1,5 @@
 import logging
-import threading
+import asyncio
 from bot import dp, bot
 import handlers  # noqa: F401 - чтобы загрузились обработчики
 from flask import Flask
@@ -14,13 +14,12 @@ app = Flask(__name__)
 def home():
     return "Бот работает!"
 
-# Функция для запуска бота в отдельном потоке
-def start_bot():
-    dp.run_polling(bot)
-
-# Запускаем бота в фоновом режиме
-threading.Thread(target=start_bot).start()
+async def start_bot():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(start_bot())  # Запуск бота в асинхронной задаче
     app.run(host="0.0.0.0", port=8000)
     
