@@ -6,7 +6,6 @@ import handlers  # noqa: F401 - чтобы загрузились обработ
 
 logging.basicConfig(level=logging.INFO)
 
-# Создаём Flask-сервер
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,7 +16,8 @@ async def start_bot():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())  # Запуск бота как асинхронную задачу
+    loop = asyncio.new_event_loop()  # Используем new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(start_bot())  # Запуск бота
     app.run(host="0.0.0.0", port=8000)
     
