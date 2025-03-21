@@ -47,7 +47,7 @@ def create_crypto_invoice(amount, user_id, id_order):
     url = "https://pay.crypt.bot/api/createInvoice"
     headers = {"Crypto-Pay-API-Token": CRYPTOBOT_TOKEN}
     data = {
-        "asset": "USDC",
+        "asset": "USDT",
         "amount": amount,
         "description": "Оплата заказа в магазине",
         "hidden_message": f"Оплата заказа для пользователя {user_id}",
