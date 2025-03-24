@@ -7,7 +7,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CRYPTOBOT_TOKEN = os.getenv("CRYPTOBOT_TOKEN")
 R2_ACCESS_KEY = os.getenv("R2_ACCESS_KEY")
 R2_SECRET_KEY = os.getenv("R2_SECRET_KEY")
-R2_BUCKET = os.getenv("qexdy3")
+R2_BUCKET = os.getenv("R2_BUCKET")
 
 CITIES = {
     "Бишкек": ["Джал", "Тунгуч", "Аламедин-1", "Арча-Бешик", "Ак-Ордо", "Южная Магистраль", "Восток-5", "Микроши"],
