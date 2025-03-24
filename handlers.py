@@ -1,32 +1,34 @@
 from aiogram import types
 from aiogram.filters import Command
 from bot import dp
+import bot
 from config import CITIES, PRODUCTS, PRICES, CONTACTS_MASSAGE, START_MASSAGE, WORK_MASSAGE, LAW_MASSAGE, PRODUCT_MASSAGE
 from keyboards import main_menu, city_selection, district_selection, product_selection, payment_button
 from payment import create_crypto_invoice
-import csv
-import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import logging
+from csv_data import load_csv_from_r2, save_csv_to_r2
+from payment import check_payment_status
+import asyncio
+import random
+import string
 
 CSV_FILE = "users.csv"
 ORDER_FILE = "orders.csv"
+PENDING_INVOICES_FILE = "pending_invoices.csv"
+
 
 def save_user(user_id, name, username):
-    user_exists = False
-    reg_date = datetime.now().strftime("%Y-%m-%d")
-    if os.path.exists(CSV_FILE):
-        with open(CSV_FILE, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            users = list(reader)
-            for user in users:
-                if user and str(user[0]) == str(user_id):
-                    user_exists = True
-                    break
-    
+    users = load_csv_from_r2(CSV_FILE)
+    users = [row for row in users if row]  # Убираем пустые строки
+
+    user_exists = any(str(row[0]) == str(user_id) for row in users)
+
     if not user_exists:
-        with open(CSV_FILE, "a", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow([user_id, name, username, reg_date, 0, 0])
+        reg_date = datetime.now().strftime("%Y-%m-%d")
+        users.append([user_id, name, username, reg_date, 0, 0])
+        save_csv_to_r2(CSV_FILE, users)
+
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
@@ -65,40 +67,44 @@ async def handle_order_text(message: types.Message):
         updated_orders = []
         valid_orders = []
         
-        with open(ORDER_FILE, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            headers = next(reader)
-            for row in reader:
-                order_number = row[0]
-                user_id = row[1]
-                city = row[2]
-                district = row[3]
-                product = row[4]
-                price = row[5]
-                status = row[6]
-                order_time = datetime.strptime(row[7], "%Y-%m-%d %H:%M:%S")
-                
-                # Если заказ старше 1 часа и статус "Ожидает оплаты", пропускаем его (не добавляем в обновленный список)
-                if status == "Ожидает оплаты" and (current_time - order_time).total_seconds() > 3600:
-                    continue
-                
-                updated_orders.append(row)
-                
-                order_text = (f"🛒 Номер заказа: #300{order_number}\n\n"
-                              f"👤 ID пользователя: {user_id}\n"
-                              f"{city}\n"
-                              f"{district}\n\n"
-                              f"🚬 Вы выбрали товар: {product}\n\n"
-                              f"💸 Цена: {price} USDT\n\n"
-                              f"⏳ Время заказа: {order_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                              f"📌 Статус заказа: {status}\n")
-                valid_orders.append(order_text)
+        orders = load_csv_from_r2(ORDER_FILE)
+        if not orders:
+            await message.answer("Заказы отсутствуют.")
+            return
         
-        # Перезаписываем CSV-файл, оставляя только актуальные заказы
-        with open(ORDER_FILE, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerow(headers)
-            writer.writerows(updated_orders)
+        headers = orders[0]
+        changed = False  # Флаг для проверки изменений в списке заказов
+
+        for row in orders:
+            order_number = row[0]
+            user_id = row[1]
+            city = row[2]
+            district = row[3]
+            product = row[4]
+            price = row[5]
+            status = row[6]
+            order_time = datetime.strptime(row[7], "%Y-%m-%d %H:%M:%S")
+            
+            # Удаляем заказы, которым больше часа
+            if status == "Ожидает оплаты" and (current_time - order_time).total_seconds() > 3600:
+                changed = True
+                continue  # Пропускаем этот заказ
+            
+            updated_orders.append(row)
+            
+            order_text = (f"🛒 Номер заказа: #{order_number}\n\n"
+                          f"👤 ID пользователя: {user_id}\n"
+                          f"{city}\n"
+                          f"{district}\n\n"
+                          f"🚬 Вы выбрали товар: {product}\n\n"
+                          f"💸 Цена: {price} USDT\n\n"
+                          f"⏳ Время заказа: {order_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                          f"📌 Статус заказа: {status}\n")
+            valid_orders.append(order_text)
+        
+        # Перезаписываем файл ТОЛЬКО если заказы были изменены
+        if changed:
+            save_csv_to_r2(ORDER_FILE, [headers] + updated_orders)
         
         if valid_orders:
             for order in valid_orders:
@@ -110,24 +116,24 @@ async def handle_order_text(message: types.Message):
         print(f"Ошибка при чтении истории заказов: {e}")
 
 
+
+
 @dp.message(lambda message: message.text == "Профиль 🥷")
 async def handle_profile_text(message: types.Message):
     user_id = message.from_user.id
-    
-    if os.path.exists(CSV_FILE):
-        with open(CSV_FILE, "r", newline="", encoding="utf-8") as file:
-            reader = csv.reader(file)
-            for row in reader:
-                if row and str(row[0]) == str(user_id):
-                    profile_text = (f"ℹ️ Профиль\n\n"
-                                    f"❤️ Имя: {row[1]}\n"
-                                    f"😎 Юзер: @{row[2] if row[2] != 'Нет' else 'Без имени'}\n"
-                                    f"🔑 ID: {row[0]}\n"
-                                    f"🆕 Дата регистрации: {row[3]}\n"
-                                    f"🛒 Количество покупок: {row[4]}\n"
-                                    f"💰 Сумма покупок: {row[5]} $")
-                    await message.answer(profile_text)
-                    return
+    users = load_csv_from_r2(CSV_FILE)
+
+    for row in users:
+        if row and str(row[0]) == str(user_id):
+            profile_text = (f"ℹ️ Профиль\n\n"
+                            f"❤️ Имя: {row[1]}\n"
+                            f"😎 Юзер: @{row[2] if row[2] != 'Нет' else 'Без имени'}\n"
+                            f"🔑 ID: {row[0]}\n"
+                            f"🆕 Дата регистрации: {row[3]}\n"
+                            f"🛒 Количество покупок: {row[4]}\n"
+                            f"💰 Сумма покупок: {row[5]} $")
+            await message.answer(profile_text)
+            return
     
     await message.answer("Ваш профиль не найден.")
 
@@ -150,22 +156,28 @@ async def choose_product(callback: types.CallbackQuery):
         reply_markup=product_selection(district, PRODUCTS, PRICES)
     )
 
-def generate_order_number():
-    if not os.path.exists(ORDER_FILE):
-        return 1
-    
-    with open(ORDER_FILE, "r", newline="", encoding="utf-8") as file:
-        reader = csv.reader(file)
-        orders = list(reader)
-    
-    return len(orders) + 1 if orders else 1
 
-# Функция для сохранения заказа
-def save_order(order_number, user_id, city, district, product, price, status="Ожидает оплаты"):
+def get_invoice_by_order_id(order_id):
+    """Ищет инвойс с нужным order_id."""
+    invoices = load_csv_from_r2(PENDING_INVOICES_FILE)
+    
+    for row in invoices:
+        if row[1] == order_id:  # order_id находится во втором столбце (индекс 1)
+            return row[0]  # Возвращаем invoice_id (первый столбец)
+    
+    return None  # Если не нашли, возвращаем None
+
+
+def save_order(invoice_id, user_id, city, district, product, price, status="Ожидает оплаты"):
+    orders = load_csv_from_r2(ORDER_FILE)
     order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(ORDER_FILE, "a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow([order_number, user_id, city, district, product, price, status, order_time])
+    orders.append([invoice_id, user_id, city, district, product, price, status, order_time])
+    save_csv_to_r2(ORDER_FILE, orders)
+
+
+def generate_random_id(length=10):
+    """Генерирует случайный ID заданной длины."""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 @dp.callback_query(lambda c: c.data.startswith("product_"))
 async def confirm_purchase(callback: types.CallbackQuery):
@@ -178,20 +190,26 @@ async def confirm_purchase(callback: types.CallbackQuery):
     
     city = callback.message.text.split("\n")[0].replace("\ud83c\udf06 Город: ", "")
     district = callback.message.text.split("\n")[2].replace("\ud83c\udf03 Район: ", "")
+
+    order_id = generate_random_id()
     
-    order_number = generate_order_number()
-    order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    save_order(order_number, callback.from_user.id, city, district, product, price, status="Ожидает оплаты")
+    pay_url = create_crypto_invoice(price, callback.from_user.id, order_id)
     
-    pay_url = create_crypto_invoice(price, callback.from_user.id, order_number)
+    invoice_id = get_invoice_by_order_id(order_id)
+    if not invoice_id:
+        await callback.message.edit_text("Ошибка: Нет доступного инвойса для вашего заказа. Попробуйте позже.")
+        return
+
     
-    text = (f"🛒 Номер заказа: #300{order_number}\n\n"
+    save_order(invoice_id, callback.from_user.id, city, district, product, price, status="Ожидает оплаты")
+    
+    text = (f"\U0001F6D2 Номер заказа: #{invoice_id}\n\n"
             f"{city}\n"
             f"{district}\n\n"
-            f"🚬 Вы выбрали товар: {product}.\n\n"
-            f"💸 Цена: {price} USDT.\n\n"
-            f"🕒 Время заказа: {order_time}\n\n"
-            f"📌 Статус заказа: Ожидает оплаты\n\n"
+            f"\U0001F6AC Вы выбрали товар: {product}.\n\n"
+            f"\U0001F4B8 Цена: {price} USDT.\n\n"
+            f"\U0001F551 Время заказа: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"\U0001F4CD Статус заказа: Ожидает оплаты\n\n"
             f"⏳ Нажмите кнопку ниже для оплаты:")
     
     await callback.message.edit_text(text, reply_markup=payment_button(pay_url))
@@ -213,3 +231,35 @@ async def back_to_cities(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_districts")
 async def back_to_districts(callback: types.CallbackQuery):
     await callback.message.edit_text("🇰🇬 Мы работаем только в Кыргызстане\n\n⤵️ Выбери город:", reply_markup=city_selection())
+
+async def monitor_invoices():
+    while True:
+        orders = load_csv_from_r2(ORDER_FILE)
+        now = datetime.now()
+        
+        for order in orders:
+            invoice_id, user_id, city, district, product, price, status, order_time = order
+            order_datetime = datetime.strptime(order_time, "%Y-%m-%d %H:%M:%S")
+            
+            # Проверяем только ордера, которым меньше часа
+            if status == "Ожидает оплаты" and now - order_datetime < timedelta(hours=1):
+                paid = await check_payment_status(invoice_id, user_id, float(price))
+                if paid:
+                    order[6] = "✅ Оплачено"
+                    save_csv_to_r2(ORDER_FILE, orders)
+                    
+                    # Отправляем сообщение пользователю
+                    text = (f"✅ Ваш заказ #{invoice_id} оплачен!\n\n"
+                            f"🏙 Город: {city}\n"
+                            f"📍 Район: {district}\n"
+                            f"🛒 Товар: {product}\n"
+                            f"💰 Цена: {price} USDT\n"
+                            f"🕒 Время заказа: {order_time}\n"
+                            f"📌 Спасибо за покупку!")
+                    
+                    try:
+                        await bot.send_message(user_id, text)
+                    except Exception as e:
+                        logging.error(f"Ошибка при отправке сообщения пользователю {user_id}: {e}")
+        
+        await asyncio.sleep(30)  # Проверка каждые 30 секунд
