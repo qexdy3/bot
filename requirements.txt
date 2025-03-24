@@ -24,3 +24,4 @@ flask
 uvicorn
 fastapi
 aiohttp
+boto3
