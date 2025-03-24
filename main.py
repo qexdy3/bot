@@ -45,7 +45,7 @@ async def web_server():
 async def start_bot():
     """Запуск бота и мониторинга инвойсов."""
     asyncio.create_task(monitor_invoices())  # Фоновый мониторинг инвойсов
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 async def main():
     """Запуск всех компонентов: веб-сервера, проверки URL и бота."""
