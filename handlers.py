@@ -63,6 +63,7 @@ async def handle_contact_text(message: types.Message):
 @dp.message(lambda message: message.text == "⌛️ История заказов")
 async def handle_order_text(message: types.Message):
     try:
+        user_id = str(message.from_user.id)  # ID пользователя
         current_time = datetime.now()
         updated_orders = []
         valid_orders = []
@@ -75,16 +76,21 @@ async def handle_order_text(message: types.Message):
         headers = orders[0]
         changed = False  # Флаг для проверки изменений в списке заказов
 
-        for row in orders:
+        for row in orders[0:]:  # Пропускаем заголовки
             order_number = row[0]
-            user_id = row[1]
+            order_user_id = row[1]
             city = row[2]
             district = row[3]
             product = row[4]
             price = row[5]
             status = row[6]
             order_time = datetime.strptime(row[7], "%Y-%m-%d %H:%M:%S")
-            
+
+            # Фильтруем заказы по user_id
+            if order_user_id != user_id:
+                updated_orders.append(row)  # Оставляем заказы других пользователей
+                continue
+
             # Удаляем заказы, которым больше часа
             if status == "Ожидает оплаты" and (current_time - order_time).total_seconds() > 3600:
                 changed = True
@@ -93,9 +99,8 @@ async def handle_order_text(message: types.Message):
             updated_orders.append(row)
             
             order_text = (f"🛒 Номер заказа: #{order_number}\n\n"
-                          f"👤 ID пользователя: {user_id}\n"
-                          f"{city}\n"
-                          f"{district}\n\n"
+                          f"🏙 Город: {city}\n"
+                          f"📍 Район: {district}\n\n"
                           f"🚬 Вы выбрали товар: {product}\n\n"
                           f"💸 Цена: {price} USDT\n\n"
                           f"⏳ Время заказа: {order_time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
@@ -110,10 +115,12 @@ async def handle_order_text(message: types.Message):
             for order in valid_orders:
                 await message.answer(order)
         else:
-            await message.answer("Заказы отсутствуют.")
+            await message.answer("У вас нет активных заказов.")
     except Exception as e:
         await message.answer("Ошибка при получении истории заказов.")
         print(f"Ошибка при чтении истории заказов: {e}")
+
+
 
 
 
