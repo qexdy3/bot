@@ -63,7 +63,7 @@ async def handle_contact_text(message: types.Message):
 @dp.message(lambda message: message.text == "⌛️ История заказов")
 async def handle_order_text(message: types.Message):
     try:
-        user_id = str(message.from_user.id)  # ID пользователя
+        user_id = str(message.from_user.id)  # ID текущего пользователя
         current_time = datetime.now()
         updated_orders = []
         valid_orders = []
@@ -73,23 +73,18 @@ async def handle_order_text(message: types.Message):
             await message.answer("Заказы отсутствуют.")
             return
         
-        headers = orders[0]
+        headers = orders[0]  # Заголовки CSV
         changed = False  # Флаг для проверки изменений в списке заказов
 
-        for row in orders[0:]:  # Пропускаем заголовки
-            order_number = row[0]
-            order_user_id = row[1]
-            city = row[2]
-            district = row[3]
-            product = row[4]
-            price = row[5]
-            status = row[6]
-            order_time = datetime.strptime(row[7], "%Y-%m-%d %H:%M:%S")
+        for row in orders[1:]:  # Пропускаем заголовки
+            order_number, order_user_id, city, district, product, price, status, order_time = row
 
-            # Фильтруем заказы по user_id
+            # Проверяем, принадлежит ли заказ текущему пользователю
             if order_user_id != user_id:
-                updated_orders.append(row)  # Оставляем заказы других пользователей
-                continue
+                updated_orders.append(row)  # Оставляем чужие заказы
+                continue  # Пропускаем этот заказ
+
+            order_time = datetime.strptime(order_time, "%Y-%m-%d %H:%M:%S")
 
             # Удаляем заказы, которым больше часа
             if status == "Ожидает оплаты" and (current_time - order_time).total_seconds() > 3600:
@@ -97,7 +92,7 @@ async def handle_order_text(message: types.Message):
                 continue  # Пропускаем этот заказ
             
             updated_orders.append(row)
-            
+
             order_text = (f"🛒 Номер заказа: #{order_number}\n\n"
                           f"🏙 Город: {city}\n"
                           f"📍 Район: {district}\n\n"
@@ -107,10 +102,11 @@ async def handle_order_text(message: types.Message):
                           f"📌 Статус заказа: {status}\n")
             valid_orders.append(order_text)
         
-        # Перезаписываем файл ТОЛЬКО если заказы были изменены
+        # Если были удаленные заказы, обновляем файл
         if changed:
             save_csv_to_r2(ORDER_FILE, [headers] + updated_orders)
-        
+
+        # Отправляем пользователю только его заказы
         if valid_orders:
             for order in valid_orders:
                 await message.answer(order)
@@ -119,8 +115,6 @@ async def handle_order_text(message: types.Message):
     except Exception as e:
         await message.answer("Ошибка при получении истории заказов.")
         print(f"Ошибка при чтении истории заказов: {e}")
-
-
 
 
 
